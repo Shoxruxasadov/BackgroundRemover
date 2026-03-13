@@ -47,6 +47,39 @@ def validate_image(file: UploadFile) -> None:
         )
 
 
+OUTPUT_SIZE = 512
+MAX_OUTPUT_BYTES = 500 * 1024  # 500 KB
+
+
+def _tight_crop(image: Image.Image) -> Image.Image:
+    """Crop to the bounding box of non-transparent pixels, then fit into a square."""
+    alpha = image.getchannel("A")
+    bbox = alpha.getbbox()
+    if bbox is None:
+        return image
+    cropped = image.crop(bbox)
+
+    w, h = cropped.size
+    side = max(w, h)
+    square = Image.new("RGBA", (side, side), (0, 0, 0, 0))
+    square.paste(cropped, ((side - w) // 2, (side - h) // 2))
+    return square
+
+
+def _compress_png(image: Image.Image, max_bytes: int) -> bytes:
+    """Save as PNG, reducing colors if needed to stay under max_bytes."""
+    buf = io.BytesIO()
+    image.save(buf, format="PNG", optimize=True)
+    if buf.tell() <= max_bytes:
+        return buf.getvalue()
+
+    quantized = image.quantize(colors=256, method=Image.Quantize.MEDIANCUT, dither=0)
+    quantized = quantized.convert("RGBA")
+    buf = io.BytesIO()
+    quantized.save(buf, format="PNG", optimize=True)
+    return buf.getvalue()
+
+
 def remove_background(image_bytes: bytes) -> bytes:
     from rembg import remove
 
@@ -61,6 +94,7 @@ def remove_background(image_bytes: bytes) -> bytes:
         raise HTTPException(status_code=500, detail="Failed to process image.")
 
     image = Image.open(io.BytesIO(output_bytes)).convert("RGBA")
-    buffer = io.BytesIO()
-    image.save(buffer, format="PNG")
-    return buffer.getvalue()
+    image = _tight_crop(image)
+    image = image.resize((OUTPUT_SIZE, OUTPUT_SIZE), Image.Resampling.LANCZOS)
+
+    return _compress_png(image, MAX_OUTPUT_BYTES)
