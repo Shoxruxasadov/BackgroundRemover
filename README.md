@@ -1,129 +1,93 @@
 # Background Remover API
 
-A lightweight FastAPI service that removes backgrounds from images using [rembg](https://github.com/danielgatis/rembg). Designed to be consumed by mobile or web clients (e.g. React Native).
-
----
-
-## Project Structure
-
-```
-BackgroundRemover/
-├── app/
-│   ├── main.py       # FastAPI app + CORS middleware
-│   ├── routes.py     # API endpoints
-│   └── utils.py      # Image validation & background removal
-├── requirements.txt
-├── Dockerfile
-└── README.md
-```
-
----
-
-## Local Setup
-
-### Prerequisites
-
-- Python 3.10+
-- pip
-
-### Install & Run
-
-```bash
-# Install dependencies
-pip install -r requirements.txt
-
-# Start the server
-uvicorn app.main:app --host 0.0.0.0 --port 8000
-```
-
-The API will be available at `http://localhost:8000`.
-
----
-
-## Docker Setup
-
-### Build the image
-
-```bash
-docker build -t background-remover .
-```
-
-### Run the container
-
-```bash
-docker run -p 8000:8000 background-remover
-```
-
----
+Coin rasmlaridan backgroundni olib tashlash va 512x512 PNG formatda qaytarish.
 
 ## API Endpoints
 
-### `GET /health`
+| Method | URL          | Description              |
+|--------|-------------|--------------------------|
+| GET    | `/health`   | Server holatini tekshirish |
+| POST   | `/remove-bg`| Background olib tashlash  |
 
-Returns the health status of the service.
+### POST `/remove-bg`
 
-**Response**
+**Request:** `multipart/form-data` — `file` field (jpg, png, webp, max 10MB)
 
-```json
-{ "status": "ok" }
+**Response:** `image/png` — 512x512, tight-cropped, ≤500KB
+
+```bash
+curl -X POST https://your-domain.com/remove-bg \
+  -F "file=@coin.jpg" \
+  -o result.png
 ```
 
----
+## Hostinger VPS ga deploy qilish
 
-### `POST /remove-bg`
+### 1. VPS ga ulanish
 
-Removes the background from an uploaded image.
+```bash
+ssh root@YOUR_VPS_IP
+```
 
-**Request**
+### 2. Docker o'rnatish
 
-| Field  | Type   | Description                          |
-|--------|--------|--------------------------------------|
-| `file` | binary | Image file (`multipart/form-data`)   |
+```bash
+curl -fsSL https://get.docker.com | sh
+```
 
-**Constraints**
+### 3. Loyihani yuklash
 
-- Maximum file size: **10 MB**
-- Supported formats: `jpg`, `jpeg`, `png`, `webp`
+```bash
+git clone https://github.com/YOUR_USERNAME/BackgroundRemover.git
+cd BackgroundRemover
+```
 
-**Response**
+### 4. Ishga tushirish
 
-- Content-Type: `image/png`
-- Body: PNG image with transparent background
+```bash
+docker compose up -d --build
+```
 
-**Error Responses**
+Birinchi marta build ~2-3 daqiqa davom etadi (model yuklanadi).
 
-| Status | Reason                          |
-|--------|---------------------------------|
-| `400`  | Invalid or corrupted image      |
-| `413`  | File exceeds 10 MB limit        |
-| `415`  | Unsupported image format        |
-| `500`  | Internal processing error       |
-
----
-
-## Testing with curl
-
-### Health check
+### 5. Tekshirish
 
 ```bash
 curl http://localhost:8000/health
 ```
 
-### Remove background
+### 6. Nginx reverse proxy (HTTPS)
 
 ```bash
-curl -X POST http://localhost:8000/remove-bg \
-  -F "file=@image.jpg" \
-  --output result.png
+apt install -y nginx certbot python3-certbot-nginx
 ```
 
-The processed image will be saved as `result.png` with a transparent background.
+`/etc/nginx/sites-available/backgroundremover` faylini yarating:
 
----
+```nginx
+server {
+    server_name your-domain.com;
+    client_max_body_size 10M;
 
-## Interactive API Docs
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_read_timeout 120s;
+    }
+}
+```
 
-FastAPI provides built-in documentation:
+```bash
+ln -s /etc/nginx/sites-available/backgroundremover /etc/nginx/sites-enabled/
+nginx -t && systemctl reload nginx
+certbot --nginx -d your-domain.com
+```
 
-- Swagger UI: [http://localhost:8000/docs](http://localhost:8000/docs)
-- ReDoc: [http://localhost:8000/redoc](http://localhost:8000/redoc)
+### Yangilash
+
+```bash
+cd BackgroundRemover
+git pull
+docker compose up -d --build
+```

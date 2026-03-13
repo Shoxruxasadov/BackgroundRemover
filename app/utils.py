@@ -1,8 +1,8 @@
 import io
-import threading
 
 from fastapi import HTTPException, UploadFile
 from PIL import Image
+from rembg import new_session, remove
 
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 ALLOWED_CONTENT_TYPES = {
@@ -12,25 +12,10 @@ ALLOWED_CONTENT_TYPES = {
     "image/webp",
 }
 
-_session = None
-_session_lock = threading.Lock()
-_session_ready = threading.Event()
+OUTPUT_SIZE = 512
+MAX_OUTPUT_BYTES = 500 * 1024  # 500 KB
 
-
-def _load_session():
-    global _session
-    from rembg import new_session
-    session = new_session("u2net")
-    with _session_lock:
-        _session = session
-    _session_ready.set()
-
-
-threading.Thread(target=_load_session, daemon=True).start()
-
-
-def get_session():
-    return _session
+session = new_session("u2net")
 
 
 def validate_image(file: UploadFile) -> None:
@@ -45,10 +30,6 @@ def validate_image(file: UploadFile) -> None:
             status_code=413,
             detail="File too large. Maximum allowed size is 10 MB.",
         )
-
-
-OUTPUT_SIZE = 512
-MAX_OUTPUT_BYTES = 500 * 1024  # 500 KB
 
 
 def _tight_crop(image: Image.Image) -> Image.Image:
@@ -81,15 +62,13 @@ def _compress_png(image: Image.Image, max_bytes: int) -> bytes:
 
 
 def remove_background(image_bytes: bytes) -> bytes:
-    from rembg import remove
-
     try:
         Image.open(io.BytesIO(image_bytes)).verify()
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid or corrupted image file.")
 
     try:
-        output_bytes = remove(image_bytes, session=get_session())
+        output_bytes = remove(image_bytes, session=session)
     except Exception:
         raise HTTPException(status_code=500, detail="Failed to process image.")
 
